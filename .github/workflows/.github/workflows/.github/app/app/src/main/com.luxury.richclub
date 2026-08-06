@@ -1,0 +1,103 @@
+package com.luxury.richclub
+
+import android.app.Application
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.room.*
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.launch
+
+// 1. Data Layer
+@Entity(tableName = "user_profile")
+data class UserEntity(@PrimaryKey val id: Int = 1, val currentRank: Int)
+
+@Dao
+interface UserDao {
+    @Query("SELECT * FROM user_profile WHERE id = 1")
+    fun getUser(): Flow<UserEntity?>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertUser(user: UserEntity)
+}
+
+@Database(entities = [UserEntity::class], version = 1, exportSchema = false)
+abstract class AppDatabase : RoomDatabase() {
+    abstract fun userDao(): UserDao
+    companion object {
+        @Volatile private var INSTANCE: AppDatabase? = null
+        fun getDatabase(context: android.content.Context): AppDatabase {
+            return INSTANCE ?: synchronized(this) {
+                Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "rich_db").build().also { INSTANCE = it }
+            }
+        }
+    }
+}
+
+class RichApplication : Application() {
+    val database by lazy { AppDatabase.getDatabase(this) }
+}
+
+// 2. Activity & Interface
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val app = application as RichApplication
+        val userDao = app.database.userDao()
+
+        setContent {
+            MaterialTheme {
+                val userState by userDao.getUser().collectAsState(initial = UserEntity(1, 1))
+                val scope = rememberCoroutineScope()
+                val currentRank = userState?.currentRank ?: 1
+
+                Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF0A0A0B)) {
+                    Column(
+                        modifier = Modifier.fillMaxSize().padding(32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("THE RICH CLUB", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color(0xFFD4AF37))
+                            Spacer(modifier = Modifier.height(24.dp))
+                            Text(
+                                "Congratulations.\nYou belong to the most exclusive digital club.",
+                                textAlign = TextAlign.Center,
+                                color = Color.White
+                            )
+                        }
+
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("CURRENT RANK", fontSize = 12.sp, color = Color.Gray)
+                            Text("Rich LEVEL $currentRank", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color(0xFFD4AF37))
+                            Spacer(modifier = Modifier.height(24.dp))
+                            Button(
+                                onClick = {
+                                    scope.launch { userDao.insertUser(UserEntity(1, currentRank + 1)) }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD4AF37)),
+                                shape = RoundedCornerShape(25.dp),
+                                modifier = Modifier.fillMaxWidth().height(50.dp)
+                            ) {
+                                Text("UPGRADE MEMBERSHIP", color = Color.Black, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
